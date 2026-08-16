@@ -1,0 +1,158 @@
+---
+- name: Assert required secrets are set
+  ansible.builtin.assert:
+    that:
+      - ninerouter_jwt_secret | length > 0
+      - ninerouter_initial_password | length > 0
+      - ninerouter_jwt_secret not in _ninerouter_rejected_secrets
+      - ninerouter_initial_password not in _ninerouter_rejected_secrets
+      - ninerouter_api_key_secret not in _ninerouter_rejected_secrets
+      - ninerouter_machine_id_salt not in _ninerouter_rejected_secrets
+    fail_msg: >-
+      ninerouter_jwt_secret and ninerouter_initial_password must be set to real
+      values, not left empty or at the upstream placeholders. Generate them with
+      `openssl rand -hex 32` and store them in an ansible-vault file — see
+      group_vars/ninerouter/vault.yml.example.
+    quiet: true
+  tags: [ninerouter, ninerouter_validate]
+
+- name: Assert the data path is absolute
+  ansible.builtin.assert:
+    that:
+      - ninerouter_data_path is match('^/')
+    fail_msg: >-
+      ninerouter_data_path must be an absolute path on the target host
+      (got: {{ ninerouter_data_path }}). A relative path would be resolved by the
+      Docker daemon rather than by Ansible, and not land where you expect.
+    quiet: true
+  tags: [ninerouter, ninerouter_validate]
+
+- name: Ensure the data directory exists
+  ansible.builtin.file:
+    path: "{{ ninerouter_data_path }}"
+    state: directory
+    owner: "{{ ninerouter_container_uid }}"
+    group: "{{ ninerouter_container_gid }}"
+    mode: "{{ ninerouter_data_path_mode }}"
+  tags: [ninerouter]
+
+- name: Pull container images
+  community.docker.docker_image_pull:
+    docker_host: "{{ ninerouter_docker_host }}"
+    name: "{{ item.name }}"
+    tag: "{{ item.tag }}"
+  loop:
+    - name: "{{ ninerouter_image }}"
+      tag: "{{ ninerouter_image_tag }}"
+    - name: "{{ ninerouter_headroom_image }}"
+      tag: "{{ ninerouter_headroom_image_tag }}"
+  loop_control:
+    label: "{{ item.name }}:{{ item.tag }}"
+  when: ninerouter_pull_images | bool
+  tags: [ninerouter, ninerouter_pull]
+
+- name: Create the container network
+  community.docker.docker_network:
+    docker_host: "{{ ninerouter_docker_host }}"
+    name: "{{ ninerouter_network_name }}"
+    state: present
+  tags: [ninerouter]
+
+# Started before 9Router and waited on below, because 9Router reads the Headroom
+# status at boot. A user-defined network gives it DNS, so 9Router reaches it at
+# http://{{ ninerouter_headroom_container_name }}:8787.
+- name: Create the headroom container
+  community.docker.docker_container:
+    docker_host: "{{ ninerouter_docker_host }}"
+    name: "{{ ninerouter_headroom_container_name }}"
+    image: "{{ ninerouter_headroom_image }}:{{ ninerouter_headroom_image_tag }}"
+    state: "{{ ninerouter_state }}"
+    restart_policy: "{{ ninerouter_restart_policy }}"
+    networks:
+      - name: "{{ ninerouter_network_name }}"
+    # An empty list publishes nothing, keeping the sidecar reachable only over
+    # the container network.
+    published_ports: "{{ ninerouter_headroom_publish | bool | ternary([_ninerouter_headroom_port_spec], []) }}"
+    security_opts:
+      - "no-new-privileges:true"
+    log_driver: "{{ ninerouter_log_driver }}"
+    log_options:
+      max-size: "{{ ninerouter_log_max_size }}"
+      max-file: "{{ ninerouter_log_max_file }}"
+  tags: [ninerouter]
+
+# The image ships its own healthcheck (GET /readyz), so this waits on real
+# readiness rather than on the container merely existing.
+- name: Wait for headroom to report healthy
+  community.docker.docker_container_info:
+    docker_host: "{{ ninerouter_docker_host }}"
+    name: "{{ ninerouter_headroom_container_name }}"
+  register: _ninerouter_headroom_info
+  until: _ninerouter_headroom_info.container.State.Health.Status | default('') == 'healthy'
+  retries: "{{ _ninerouter_health_retries }}"
+  delay: "{{ ninerouter_health_delay }}"
+  when: ninerouter_state == 'started'
+  tags: [ninerouter]
+
+# Docker rejects non-string environment values, and to the application an empty
+# string is not the same as an unset variable — so cast everything and drop the
+# blanks. ninerouter_extra_env merges last so it can override any default.
+- name: Build the 9router container environment
+  ansible.builtin.set_fact:
+    _ninerouter_env: "{{ _stringified | dict2items | rejectattr('value', 'equalto', '') | items2dict }}"
+  vars:
+    _merged: "{{ _ninerouter_env_base | combine(ninerouter_extra_env) }}"
+    _no_null: "{{ _merged | dict2items | rejectattr('value', 'equalto', None) | items2dict }}"
+    _stringified: "{{ dict(_no_null.keys() | zip(_no_null.values() | map('string'))) }}"
+  no_log: true
+  tags: [ninerouter]
+
+- name: Create the 9router container
+  community.docker.docker_container:
+    docker_host: "{{ ninerouter_docker_host }}"
+    name: "{{ ninerouter_container_name }}"
+    image: "{{ ninerouter_image }}:{{ ninerouter_image_tag }}"
+    state: "{{ ninerouter_state }}"
+    restart_policy: "{{ ninerouter_restart_policy }}"
+    networks:
+      - name: "{{ ninerouter_network_name }}"
+    published_ports:
+      - "{{ ninerouter_bind_addr }}:{{ ninerouter_host_port }}:{{ _ninerouter_internal_port }}"
+    volumes:
+      - "{{ ninerouter_data_path }}:/app/data"
+    env: "{{ _ninerouter_env }}"
+    healthcheck:
+      test: ["CMD", "node", "-e", "{{ _ninerouter_healthcheck_js }}"]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
+    security_opts:
+      - "no-new-privileges:true"
+    log_driver: "{{ ninerouter_log_driver }}"
+    log_options:
+      max-size: "{{ ninerouter_log_max_size }}"
+      max-file: "{{ ninerouter_log_max_file }}"
+  # The environment carries JWT_SECRET and INITIAL_PASSWORD.
+  no_log: true
+  tags: [ninerouter]
+
+- name: Wait for 9router to report healthy
+  community.docker.docker_container_info:
+    docker_host: "{{ ninerouter_docker_host }}"
+    name: "{{ ninerouter_container_name }}"
+  register: _ninerouter_info
+  until: _ninerouter_info.container.State.Health.Status | default('') == 'healthy'
+  retries: "{{ _ninerouter_health_retries }}"
+  delay: "{{ ninerouter_health_delay }}"
+  when: ninerouter_state == 'started'
+  tags: [ninerouter]
+
+- name: Report the reachable address
+  ansible.builtin.debug:
+    msg: >-
+      9Router is healthy on http://{{ ninerouter_bind_addr }}:{{ ninerouter_host_port }}
+      (data in {{ ninerouter_data_path }} on {{ inventory_hostname }}). Enable the
+      sidecar in the dashboard under Endpoint -> Token Saver -> Headroom.
+  when: ninerouter_state == 'started'
+  tags: [ninerouter]

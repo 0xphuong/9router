@@ -6,8 +6,14 @@
 # Bind-mounted runtime data (default DATA_PATH) — SQLite DB, certs, backups
 docker-compose/data/
 
-# Ansible / Helm local state (added as those deployments land)
+# Ansible — vault.yml holds JWT_SECRET and INITIAL_PASSWORD even when encrypted;
+# keeping it out of the repo avoids relying on the vault password alone.
+ansible/group_vars/*/vault.yml
+ansible/inventory/*.local.yml
 *.retry
+.ansible/
+
+# Helm local state (added as that deployment lands)
 charts/**/charts/
 *.tgz
 

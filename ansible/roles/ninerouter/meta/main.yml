@@ -1,0 +1,27 @@
+---
+galaxy_info:
+  role_name: ninerouter
+  namespace: nine_router
+  author: 0xphuong
+  description: >-
+    Deploy 9Router and its Headroom sidecar as Docker containers, using the
+    community.docker container modules directly.
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions: [jammy, noble]
+    - name: Debian
+      versions: [bookworm, trixie]
+    - name: EL
+      versions: ["9"]
+  galaxy_tags:
+    - docker
+    - container
+    - llm
+    - proxy
+
+dependencies: []
+
+collections:
+  - community.docker

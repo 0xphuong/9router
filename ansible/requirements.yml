@@ -1,0 +1,10 @@
+---
+collections:
+  # docker_container, docker_container_info, docker_network, docker_image_pull.
+  # 3.6+ is required for docker_image_pull.
+  - name: community.docker
+    version: ">=3.6.0"
+
+  # profile_tasks callback enabled in ansible.cfg.
+  - name: ansible.posix
+    version: ">=1.5.0"

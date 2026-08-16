@@ -1,0 +1,16 @@
+---
+# Install Docker CE from Docker's own repository. Set false if the host already
+# has a working Docker daemon managed elsewhere.
+docker_engine_install: true
+
+# The community.docker modules run on the target host and talk to the daemon
+# over its HTTP API, which needs the requests library there.
+docker_engine_python_packages:
+  - requests
+
+# Users to add to the docker group. Membership is root-equivalent, so this is
+# empty by default.
+docker_engine_users: []
+
+docker_engine_service_enabled: true
+docker_engine_service_state: started

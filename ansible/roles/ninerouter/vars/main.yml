@@ -1,0 +1,66 @@
+---
+# Internal — not meant to be overridden. Use the variables in defaults/main.yml.
+
+# The container always listens on 20128 inside the network namespace; only the
+# published host port is configurable.
+_ninerouter_internal_port: 20128
+_ninerouter_headroom_internal_port: 8787
+
+# Values the upstream .env.example ships as placeholders. Refusing them stops a
+# copy-paste deployment from going out with a guessable signing key.
+_ninerouter_rejected_secrets:
+  - change-me
+  - change-me-to-a-long-random-secret
+  - endpoint-proxy-api-key-secret
+  - endpoint-proxy-salt
+
+# Container environment. DATA_DIR, PORT and HOSTNAME describe the container's
+# own layout rather than user configuration, so they are fixed here: DATA_DIR
+# must match the bind-mount target or the database lands in the container's
+# ephemeral layer and is lost on the next recreate.
+_ninerouter_env_base:
+  DATA_DIR: /app/data
+  PORT: "{{ _ninerouter_internal_port }}"
+  HOSTNAME: "0.0.0.0"
+  NODE_ENV: "{{ ninerouter_node_env }}"
+  HEADROOM_URL: "http://{{ ninerouter_headroom_container_name }}:{{ _ninerouter_headroom_internal_port }}"
+
+  JWT_SECRET: "{{ ninerouter_jwt_secret }}"
+  INITIAL_PASSWORD: "{{ ninerouter_initial_password }}"
+  API_KEY_SECRET: "{{ ninerouter_api_key_secret }}"
+  MACHINE_ID_SALT: "{{ ninerouter_machine_id_salt }}"
+
+  # `| string | lower` keeps a YAML boolean from reaching Docker as Python's
+  # "True"/"False", which the app does not parse as a boolean.
+  ENABLE_REQUEST_LOGS: "{{ ninerouter_enable_request_logs | string | lower }}"
+  OBSERVABILITY_ENABLED: "{{ ninerouter_observability_enabled | string | lower }}"
+  AUTH_COOKIE_SECURE: "{{ ninerouter_auth_cookie_secure | string | lower }}"
+  REQUIRE_API_KEY: "{{ ninerouter_require_api_key | string | lower }}"
+
+  BASE_URL: "{{ ninerouter_base_url }}"
+  CLOUD_URL: "{{ ninerouter_cloud_url }}"
+  NEXT_PUBLIC_BASE_URL: "{{ ninerouter_public_base_url }}"
+  NEXT_PUBLIC_CLOUD_URL: "{{ ninerouter_public_cloud_url }}"
+
+  # Empty values are stripped before the container is created, so unset proxy
+  # variables are absent rather than set to "".
+  HTTP_PROXY: "{{ ninerouter_http_proxy }}"
+  HTTPS_PROXY: "{{ ninerouter_https_proxy }}"
+  ALL_PROXY: "{{ ninerouter_all_proxy }}"
+  NO_PROXY: "{{ ninerouter_no_proxy }}"
+  SEARXNG_URL: "{{ ninerouter_searxng_url }}"
+
+# Node's global fetch, because the image ships no curl or wget. A redirect to
+# the login page is a healthy answer, so anything below 500 passes.
+_ninerouter_healthcheck_js: >-
+  fetch('http://127.0.0.1:{{ _ninerouter_internal_port }}/')
+  .then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))
+
+_ninerouter_headroom_port_spec: >-
+  {{ ninerouter_headroom_bind_addr }}:{{ ninerouter_headroom_host_port }}:{{ _ninerouter_headroom_internal_port }}
+
+# `until` counts retries, not seconds. Round up so a timeout of 180s at a 5s
+# delay really waits 180s rather than falling a retry short.
+_ninerouter_health_retries: >-
+  {{ (ninerouter_health_timeout | int / ninerouter_health_delay | int)
+     | round(0, 'ceil') | int }}

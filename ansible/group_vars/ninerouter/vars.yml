@@ -1,0 +1,25 @@
+---
+# Non-secret settings for the ninerouter group.
+# Secrets belong in vault.yml (encrypted) — see vault.yml.example.
+
+# Pin in production. 9Router tags are bare SemVer with no leading "v".
+ninerouter_image_tag: latest
+ninerouter_headroom_image_tag: latest
+
+ninerouter_data_path: /var/lib/9router
+
+# Loopback only by default. Put a TLS-terminating reverse proxy in front before
+# changing this, and set ninerouter_auth_cookie_secure at the same time.
+ninerouter_bind_addr: "127.0.0.1"
+ninerouter_host_port: 20128
+ninerouter_auth_cookie_secure: false
+
+# The sidecar is only consumed by 9Router over the container network.
+ninerouter_headroom_publish: false
+
+# Indirection so the secrets stay in one encrypted file while the role reads
+# ordinary variable names.
+ninerouter_jwt_secret: "{{ vault_ninerouter_jwt_secret }}"
+ninerouter_initial_password: "{{ vault_ninerouter_initial_password }}"
+ninerouter_api_key_secret: "{{ vault_ninerouter_api_key_secret }}"
+ninerouter_machine_id_salt: "{{ vault_ninerouter_machine_id_salt }}"

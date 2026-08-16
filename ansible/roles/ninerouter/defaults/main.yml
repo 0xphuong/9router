@@ -1,0 +1,96 @@
+---
+# Images. Pin the tags in production — 9Router tags are bare SemVer with no
+# leading "v" (e.g. "0.5.55"). https://hub.docker.com/r/decolua/9router/tags
+ninerouter_image: decolua/9router
+ninerouter_image_tag: latest
+ninerouter_headroom_image: ghcr.io/chopratejas/headroom
+ninerouter_headroom_image_tag: latest
+
+# Pull the image on every run. With floating tags this is how you pick up a new
+# build; with pinned tags it is a no-op after the first run.
+ninerouter_pull_images: true
+
+# Container and network names. 9Router reaches the sidecar at
+# http://{{ ninerouter_headroom_container_name }}:8787 over this network, so the
+# container name is also its DNS name — changing one changes the other.
+ninerouter_container_name: 9router
+ninerouter_headroom_container_name: headroom
+ninerouter_network_name: 9router
+
+# Host directory bind-mounted at /app/data. Holds the SQLite database, certs and
+# the app's own backups. Use a path on persistent storage.
+ninerouter_data_path: /var/lib/9router
+
+# The image entrypoint runs `chown -R node:node /app/data` as root before
+# dropping to the node user, so the directory ends up owned by this uid/gid.
+ninerouter_container_uid: 1000
+ninerouter_container_gid: 1000
+ninerouter_data_path_mode: "0750"
+
+# Published ports. Default is loopback only: 9Router holds provider API keys and
+# headroom is an unauthenticated LLM proxy. Set the bind address to 0.0.0.0 only
+# behind a reverse proxy that terminates TLS.
+ninerouter_bind_addr: "127.0.0.1"
+ninerouter_host_port: 20128
+ninerouter_headroom_bind_addr: "127.0.0.1"
+ninerouter_headroom_host_port: 8787
+# headroom only needs to be reachable by 9Router over the container network.
+# Set false to stop publishing it on the host at all.
+ninerouter_headroom_publish: true
+
+ninerouter_restart_policy: unless-stopped
+ninerouter_state: started
+
+# Docker daemon socket. The default suits a normal root daemon. Rootless Docker
+# listens on unix:///run/user/<uid>/docker.sock, and Docker Desktop on
+# unix://{{ ansible_env.HOME }}/.docker/run/docker.sock.
+ninerouter_docker_host: "unix:///var/run/docker.sock"
+
+# --- Required secrets -------------------------------------------------------
+# Leave empty here; supply them from an ansible-vault file. The role asserts
+# they are set and refuses the upstream placeholder values.
+ninerouter_jwt_secret: ""
+ninerouter_initial_password: ""
+ninerouter_api_key_secret: ""
+ninerouter_machine_id_salt: ""
+
+# --- Application settings ---------------------------------------------------
+ninerouter_node_env: production
+ninerouter_enable_request_logs: false
+ninerouter_observability_enabled: true
+# Set true once 9Router is served over HTTPS.
+ninerouter_auth_cookie_secure: false
+ninerouter_require_api_key: false
+
+# BASE_URL is called by 9Router's own sync job calling back into itself, so it
+# must stay the container-internal address regardless of the published host port.
+ninerouter_base_url: "http://127.0.0.1:20128"
+ninerouter_cloud_url: "https://9router.com"
+# Next.js normally inlines NEXT_PUBLIC_* at image build time, so these may have
+# no effect on an already-built image. BASE_URL/CLOUD_URL are the ones that matter.
+ninerouter_public_base_url: "{{ ninerouter_base_url }}"
+ninerouter_public_cloud_url: "{{ ninerouter_cloud_url }}"
+
+# Optional outbound proxy for upstream provider calls. Values here are resolved
+# inside the container, so 127.0.0.1 means the container itself.
+ninerouter_http_proxy: ""
+ninerouter_https_proxy: ""
+ninerouter_all_proxy: ""
+ninerouter_no_proxy: ""
+# Optional SearXNG endpoint for the built-in web-search provider.
+ninerouter_searxng_url: ""
+
+# Free-form extra environment merged last, so it can override anything above.
+# Values are cast to strings for you.
+ninerouter_extra_env: {}
+
+# --- Logging ----------------------------------------------------------------
+# Unbounded json-file logs fill the disk on a long-running host.
+ninerouter_log_driver: json-file
+ninerouter_log_max_size: "10m"
+ninerouter_log_max_file: "3"
+
+# --- Health gating ----------------------------------------------------------
+# Seconds to wait for each container to report healthy before failing the run.
+ninerouter_health_timeout: 180
+ninerouter_health_delay: 5

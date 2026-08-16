@@ -1,0 +1,11 @@
+---
+- name: Deploy 9Router
+  hosts: ninerouter
+  become: true
+  gather_facts: true
+
+  roles:
+    - role: docker_engine
+      tags: [docker]
+    - role: ninerouter
+      tags: [ninerouter]
