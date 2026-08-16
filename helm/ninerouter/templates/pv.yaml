@@ -1,0 +1,56 @@
+{{- $p := .Values.ninerouter.persistence }}
+{{- if and $p.enabled (eq $p.mode "manual") $p.manual.createPV }}
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  # PersistentVolumes are cluster-scoped, so the name carries the namespace to
+  # keep two releases from colliding.
+  name: {{ include "ninerouter.pvName" . }}
+  labels:
+    {{- include "ninerouter.ninerouter.labels" . | nindent 4 }}
+  annotations:
+    {{- if $p.manual.keepOnUninstall }}
+    # Survives `helm uninstall`, so a reinstall rebinds to this volume instead
+    # of finding the data orphaned behind a released PV.
+    helm.sh/resource-policy: keep
+    {{- end }}
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  capacity:
+    storage: {{ $p.size | quote }}
+  accessModes:
+    {{- toYaml $p.accessModes | nindent 4 }}
+  persistentVolumeReclaimPolicy: {{ $p.manual.reclaimPolicy }}
+  storageClassName: {{ $p.manual.storageClassName | quote }}
+  # Binding both directions — claimRef here and volumeName on the PVC — makes
+  # the pairing exclusive, so no other claim in the cluster can take this volume.
+  claimRef:
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    namespace: {{ .Release.Namespace }}
+    name: {{ include "ninerouter.pvcName" . }}
+  {{- if eq $p.manual.type "local" }}
+  local:
+    path: {{ $p.manual.path | quote }}
+  {{- else }}
+  hostPath:
+    path: {{ $p.manual.path | quote }}
+    type: {{ $p.manual.hostPathType }}
+  {{- end }}
+  {{- if $p.manual.nodeAffinity }}
+  nodeAffinity:
+    {{- toYaml $p.manual.nodeAffinity | nindent 4 }}
+  {{- else if $p.manual.nodeName }}
+  # Pins the volume to the node whose disk actually holds the directory.
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - {{ $p.manual.nodeName | quote }}
+  {{- end }}
+{{- end }}

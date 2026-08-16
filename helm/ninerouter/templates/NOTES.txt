@@ -36,6 +36,21 @@ Headroom is deployed but NOT yet in use. Setting HEADROOM_URL only tells
 WARNING: persistence is disabled. 9Router is writing its SQLite database to an
 emptyDir, so every configured provider and API key is lost when the pod is
 replaced. Set ninerouter.persistence.enabled=true for anything but a trial.
+{{- else if eq .Values.ninerouter.persistence.mode "manual" }}
+
+The database is stored at {{ .Values.ninerouter.persistence.manual.path }} on
+{{ if .Values.ninerouter.persistence.manual.nodeName }}node {{ .Values.ninerouter.persistence.manual.nodeName }}{{ else }}the node running the pod{{ end }}.
+{{- if eq .Values.ninerouter.persistence.manual.type "local" }}
+That directory must already exist on the node — a local volume will not create it.
+{{- end }}
+{{- if and (eq .Values.ninerouter.persistence.manual.type "hostPath") (not .Values.ninerouter.persistence.manual.nodeName) }}
+
+WARNING: a hostPath volume with no node pinned. Any node can satisfy this
+volume, so if the pod is rescheduled elsewhere it will come up against an empty
+directory on the new node and appear to have lost its data. Safe only on a
+single-node cluster. Set ninerouter.persistence.manual.nodeName, or use
+type: local, which requires the node to be named.
+{{- end }}
 {{- end }}
 {{- if and .Values.ingress.enabled (not .Values.config.authCookieSecure) }}
 

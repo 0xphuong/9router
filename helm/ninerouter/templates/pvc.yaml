@@ -1,0 +1,32 @@
+{{- $p := .Values.ninerouter.persistence }}
+{{- if and $p.enabled (eq $p.mode "manual") }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "ninerouter.pvcName" . }}
+  labels:
+    {{- include "ninerouter.ninerouter.labels" . | nindent 4 }}
+  annotations:
+    {{- if $p.manual.keepOnUninstall }}
+    # Kept alongside the PV; deleting the claim would release the volume.
+    helm.sh/resource-policy: keep
+    {{- end }}
+    {{- with $p.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  accessModes:
+    {{- toYaml $p.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ $p.size | quote }}
+  # An explicit empty string keeps the DefaultStorageClass admission plugin from
+  # filling in the cluster default and provisioning a second, unrelated volume.
+  storageClassName: {{ $p.manual.storageClassName | quote }}
+  {{- if $p.manual.createPV }}
+  volumeName: {{ include "ninerouter.pvName" . }}
+  {{- end }}
+{{- end }}

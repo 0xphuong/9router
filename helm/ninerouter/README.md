@@ -59,9 +59,11 @@ Full list in `values.yaml`. The ones that matter:
 | `ninerouter.image.tag` | `.Chart.AppVersion` (`0.5.55`) | Bare SemVer, no leading `v` |
 | `ninerouter.replicaCount` | `1` | **Must stay 1** — see below |
 | `ninerouter.persistence.enabled` | `true` | `false` uses emptyDir and loses the database |
+| `ninerouter.persistence.mode` | `dynamic` | `dynamic`, `manual` or `existing` — see below |
 | `ninerouter.persistence.size` | `8Gi` | |
-| `ninerouter.persistence.storageClassName` | `""` | `""` = cluster default, `"-"` = no dynamic provisioning |
-| `ninerouter.persistence.existingClaim` | `""` | Bypasses the volumeClaimTemplate |
+| `ninerouter.persistence.storageClassName` | `""` | `dynamic` mode: `""` = cluster default, `"-"` = none |
+| `ninerouter.persistence.existingClaim` | `""` | `existing` mode |
+| `ninerouter.persistence.manual.path` | `/mnt/data/ninerouter` | `manual` mode: path on the node |
 | `headroom.enabled` | `true` | `false` removes the sidecar and `HEADROOM_URL` |
 | `auth.existingSecret` | `""` | Needs keys `JWT_SECRET`, `INITIAL_PASSWORD`, `API_KEY_SECRET`, `MACHINE_ID_SALT` |
 | `config.authCookieSecure` | `false` | Set `true` when serving over HTTPS |
@@ -77,6 +79,96 @@ come up with a second, empty database rather than sharing the first. Providers
 and keys configured on one pod would be invisible on the other, and which one
 you hit would depend on Service load-balancing. The chart refuses to render
 above 1 rather than let that happen quietly.
+
+## Storage
+
+Three modes, selected with `ninerouter.persistence.mode`.
+
+### `dynamic` (default)
+
+The StatefulSet's `volumeClaimTemplate` asks a StorageClass for a volume.
+
+```bash
+helm install ninerouter ./helm/ninerouter \
+  --set auth.existingSecret=ninerouter-auth \
+  --set ninerouter.persistence.storageClassName=fast-ssd \
+  --set ninerouter.persistence.size=20Gi
+```
+
+### `manual` — a PV at a path you choose
+
+For clusters with no dynamic provisioner, or when the database must live on a
+known disk. The chart creates **both** the PersistentVolume and the
+PersistentVolumeClaim and binds them to each other exclusively — `claimRef` on
+the PV, `volumeName` on the PVC — so no other claim in the cluster can take the
+volume.
+
+```bash
+# The recommended form: a local volume pinned to one node.
+helm install ninerouter ./helm/ninerouter \
+  --set auth.existingSecret=ninerouter-auth \
+  --set ninerouter.persistence.mode=manual \
+  --set ninerouter.persistence.manual.type=local \
+  --set ninerouter.persistence.manual.path=/mnt/disks/ninerouter \
+  --set ninerouter.persistence.manual.nodeName=worker-01
+```
+
+**Create the directory on that node first** — a `local` volume will not create
+it:
+
+```bash
+ssh worker-01 'sudo mkdir -p /mnt/disks/ninerouter'
+```
+
+Ownership is handled for you: the image entrypoint runs as root and chowns
+`/app/data` to uid 1000 before dropping privileges.
+
+`local` vs `hostPath`:
+
+| | `local` | `hostPath` |
+|---|---|---|
+| Node affinity | **Required** — the API server rejects a local PV without it | Optional |
+| Creates the directory | No | Yes, with `hostPathType: DirectoryOrCreate` |
+| Multi-node safe | Yes, the scheduler keeps the pod with its data | **No** — see below |
+
+The chart refuses to render a `local` PV without `nodeName` or `nodeAffinity`,
+because the API server would reject it anyway.
+
+`hostPath` without `nodeName` is accepted but dangerous: any node satisfies the
+volume, so a rescheduled pod comes up against an empty directory on a different
+node and looks like it lost its data. The chart prints a warning for that
+combination. It is fine on a single-node cluster.
+
+Other knobs:
+
+| Key | Default | Notes |
+|---|---|---|
+| `manual.type` | `local` | or `hostPath` |
+| `manual.nodeName` | `""` | Sets affinity on `kubernetes.io/hostname` |
+| `manual.nodeAffinity` | `{}` | Full override, used verbatim instead of `nodeName` |
+| `manual.storageClassName` | `""` | PV and PVC must agree; `""` keeps the default provisioner out |
+| `manual.reclaimPolicy` | `Retain` | `Delete` would let the cluster wipe the directory |
+| `manual.hostPathType` | `DirectoryOrCreate` | `hostPath` only |
+| `manual.createPV` | `true` | `false` creates only the PVC, for a PV you made yourself |
+| `manual.keepOnUninstall` | `true` | Annotates PV and PVC with `helm.sh/resource-policy: keep` |
+
+`keepOnUninstall` matters more than it looks. Unlike a `volumeClaimTemplate`
+PVC — which Helm never owned and therefore never deletes — a `manual` PV and PVC
+*are* chart resources, so `helm uninstall` would remove them. `Retain` keeps the
+bytes on disk either way, but without the annotation a reinstall would find a
+released volume it cannot rebind. Leaving this on means a reinstall picks the
+data straight back up.
+
+### `existing` — a PVC you already made
+
+```bash
+helm install ninerouter ./helm/ninerouter \
+  --set auth.existingSecret=ninerouter-auth \
+  --set ninerouter.persistence.mode=existing \
+  --set ninerouter.persistence.existingClaim=my-pvc
+```
+
+The chart creates no storage objects and mounts that claim directly.
 
 ### Security context
 
@@ -123,14 +215,19 @@ kubectl port-forward svc/ninerouter 20128:20128
 
 ### Data
 
-The volume comes from the StatefulSet's `volumeClaimTemplate`, so it is created
-by the StatefulSet controller rather than by Helm — **`helm uninstall` leaves the
-PVC behind.** That is deliberate: reinstalling the release reattaches the
-existing data. To actually delete the data:
+In `dynamic` mode the volume comes from the StatefulSet's `volumeClaimTemplate`,
+so it is created by the StatefulSet controller rather than by Helm — **`helm
+uninstall` leaves the PVC behind.** That is deliberate: reinstalling the release
+reattaches the existing data. To actually delete it:
 
 ```bash
-kubectl delete pvc data-ninerouter-0
+kubectl delete pvc data-ninerouter-0        # dynamic mode
+kubectl delete pvc ninerouter-data          # manual mode
+kubectl delete pv <namespace>-ninerouter-data
 ```
+
+In `manual` mode the data also remains in the directory on the node after the PV
+is gone; remove it there if you want it gone for good.
 
 Back up by snapshotting the PVC, or by copying the database out with the app
 stopped — SQLite runs in WAL mode, so copying a live `data.sqlite` plus its

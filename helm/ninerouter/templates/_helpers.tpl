@@ -90,6 +90,23 @@ serviceName and HEADROOM_URL cannot drift apart.
 {{- printf "%s-headroom" (include "ninerouter.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
+{{/*
+Persistence. The PVC the pod mounts in manual mode, and the cluster-scoped PV
+backing it — namespaced in the name because PVs are not namespaced and two
+releases in different namespaces would otherwise collide.
+*/}}
+{{- define "ninerouter.pvcName" -}}
+{{- if eq .Values.ninerouter.persistence.mode "existing" }}
+{{- .Values.ninerouter.persistence.existingClaim }}
+{{- else }}
+{{- printf "%s-data" (include "ninerouter.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+{{- end }}
+
+{{- define "ninerouter.pvName" -}}
+{{- printf "%s-%s-data" .Release.Namespace (include "ninerouter.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
 {{- define "ninerouter.secretName" -}}
 {{- if .Values.auth.existingSecret }}
 {{- .Values.auth.existingSecret }}
@@ -114,6 +131,33 @@ manifest the cluster would reject or that would silently lose data.
 {{- if and .Values.ingress.enabled (not .Values.config.authCookieSecure) }}
 {{- range .Values.ingress.tls }}
 {{- fail "ingress.tls is configured but config.authCookieSecure is false: the auth cookie would be sent without the Secure attribute over an HTTPS site. Set config.authCookieSecure=true." }}
+{{- end }}
+{{- end }}
+{{- if .Values.ninerouter.persistence.enabled }}
+{{- $p := .Values.ninerouter.persistence }}
+{{- if not (has $p.mode (list "dynamic" "manual" "existing")) }}
+{{- fail (printf "ninerouter.persistence.mode must be one of dynamic, manual or existing (got %q)." $p.mode) }}
+{{- end }}
+{{- if eq $p.mode "existing" }}
+{{- if not $p.existingClaim }}
+{{- fail "ninerouter.persistence.mode is \"existing\" but persistence.existingClaim is empty. Set it to the name of a PersistentVolumeClaim in this namespace." }}
+{{- end }}
+{{- end }}
+{{- if eq $p.mode "manual" }}
+{{- if not $p.manual.path }}
+{{- fail "ninerouter.persistence.mode is \"manual\" but persistence.manual.path is empty. Set it to the directory on the node where the database should live, e.g. /mnt/data/ninerouter." }}
+{{- end }}
+{{- if not (hasPrefix "/" $p.manual.path) }}
+{{- fail (printf "ninerouter.persistence.manual.path must be an absolute path (got %q)." $p.manual.path) }}
+{{- end }}
+{{- if not (has $p.manual.type (list "local" "hostPath")) }}
+{{- fail (printf "ninerouter.persistence.manual.type must be \"local\" or \"hostPath\" (got %q)." $p.manual.type) }}
+{{- end }}
+{{- if and (eq $p.manual.type "local") $p.manual.createPV }}
+{{- if and (not $p.manual.nodeName) (not $p.manual.nodeAffinity) }}
+{{- fail "A local PersistentVolume requires node affinity — the API server rejects one without it, because the data exists on exactly one node's disk. Set persistence.manual.nodeName to that node, or supply persistence.manual.nodeAffinity." }}
+{{- end }}
+{{- end }}
 {{- end }}
 {{- end }}
 {{- end }}

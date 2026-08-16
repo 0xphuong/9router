@@ -106,38 +106,41 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if or (not .Values.ninerouter.persistence.enabled) .Values.ninerouter.persistence.existingClaim }}
+      {{- $p := .Values.ninerouter.persistence }}
+      {{- if or (not $p.enabled) (ne $p.mode "dynamic") }}
       volumes:
         - name: data
-          {{- if .Values.ninerouter.persistence.existingClaim }}
-          persistentVolumeClaim:
-            claimName: {{ .Values.ninerouter.persistence.existingClaim }}
-          {{- else }}
+          {{- if not $p.enabled }}
           # No persistence: the database is lost whenever the pod is replaced.
           emptyDir: {}
+          {{- else }}
+          # manual and existing modes mount one specific claim rather than the
+          # per-replica volumeClaimTemplate, which is why replicaCount is 1.
+          persistentVolumeClaim:
+            claimName: {{ include "ninerouter.pvcName" . }}
           {{- end }}
       {{- end }}
-  {{- if and .Values.ninerouter.persistence.enabled (not .Values.ninerouter.persistence.existingClaim) }}
+  {{- if and $p.enabled (eq $p.mode "dynamic") }}
   volumeClaimTemplates:
     - metadata:
         name: data
         labels:
           {{- include "ninerouter.ninerouter.labels" . | nindent 10 }}
-        {{- with .Values.ninerouter.persistence.annotations }}
+        {{- with $p.annotations }}
         annotations:
           {{- toYaml . | nindent 10 }}
         {{- end }}
       spec:
         accessModes:
-          {{- toYaml .Values.ninerouter.persistence.accessModes | nindent 10 }}
-        {{- if .Values.ninerouter.persistence.storageClassName }}
-        {{- if eq "-" .Values.ninerouter.persistence.storageClassName }}
+          {{- toYaml $p.accessModes | nindent 10 }}
+        {{- if $p.storageClassName }}
+        {{- if eq "-" $p.storageClassName }}
         storageClassName: ""
         {{- else }}
-        storageClassName: {{ .Values.ninerouter.persistence.storageClassName }}
+        storageClassName: {{ $p.storageClassName }}
         {{- end }}
         {{- end }}
         resources:
           requests:
-            storage: {{ .Values.ninerouter.persistence.size | quote }}
+            storage: {{ $p.size | quote }}
   {{- end }}

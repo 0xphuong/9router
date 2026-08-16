@@ -30,17 +30,66 @@ ninerouter:
 
   persistence:
     enabled: true
-    # Empty uses the cluster default StorageClass. "-" disables dynamic
-    # provisioning and binds to a pre-created PV.
-    storageClassName: ""
+
+    # How the volume is provisioned:
+    #   dynamic  — StatefulSet volumeClaimTemplate against a StorageClass (default)
+    #   manual   — the chart creates a PV at a path you choose, plus a PVC bound
+    #              to it. Use when there is no dynamic provisioner, or when the
+    #              data must live at a known path on a known disk.
+    #   existing — reuse a PVC you created yourself (persistence.existingClaim)
+    mode: dynamic
+
     accessModes:
       - ReadWriteOnce
     size: 8Gi
     annotations: {}
-    # Reuse an existing PVC instead of the StatefulSet's volumeClaimTemplate.
-    # Note this bypasses the per-replica claim, so it only makes sense at
-    # replicaCount 1.
+
+    # --- mode: dynamic ---
+    # Empty uses the cluster default StorageClass. "-" disables dynamic
+    # provisioning entirely.
+    storageClassName: ""
+
+    # --- mode: existing ---
     existingClaim: ""
+
+    # --- mode: manual ---
+    manual:
+      # Path on the node where the SQLite database is stored.
+      path: /mnt/data/ninerouter
+
+      # local    — the supported way to pin data to a node's disk. Requires node
+      #            affinity, and the directory must already exist on that node.
+      # hostPath — simpler, and can create the directory for you, but any node
+      #            can mount it, so on a multi-node cluster the pod may start on
+      #            a node where the data is not. Fine for single-node clusters.
+      type: local
+
+      # Which node the disk is on. Required for type=local; strongly recommended
+      # for hostPath so the pod cannot be scheduled away from its data. Sets
+      # affinity on kubernetes.io/hostname.
+      nodeName: ""
+      # Full nodeAffinity override, used verbatim instead of nodeName.
+      nodeAffinity: {}
+
+      # Empty string keeps the default StorageClass provisioner out of the way
+      # so the PVC binds to our PV instead. PV and PVC must agree on this value.
+      storageClassName: ""
+
+      # Retain keeps the data on disk when the PV is released. Delete would let
+      # the cluster wipe it.
+      reclaimPolicy: Retain
+
+      # Only for type=hostPath. DirectoryOrCreate has the kubelet create the
+      # directory; Directory requires it to exist already.
+      hostPathType: DirectoryOrCreate
+
+      # Set false if you create the PV yourself and only want the chart's PVC.
+      createPV: true
+
+      # Keeps the PV object on `helm uninstall`. The data on disk survives
+      # regardless thanks to the Retain policy, but keeping the PV means a
+      # reinstall rebinds to it instead of leaving a released, unusable volume.
+      keepOnUninstall: true
 
   resources:
     requests:
