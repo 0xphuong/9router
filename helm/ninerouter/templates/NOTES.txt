@@ -23,6 +23,26 @@ Log in with INITIAL_PASSWORD from secret {{ include "ninerouter.secretName" . }}
     -o jsonpath='{.data.INITIAL_PASSWORD}' | base64 -d; echo
 
 Change that password in the UI right after the first login.
+{{- if include "ninerouter.usingSampleSecrets" . }}
+
+################################################################################
+#  WARNING: this release is running the chart's SAMPLE secrets.                #
+#                                                                              #
+#  Those values are committed to the repository, so they are public. Anyone     #
+#  who can read the chart can forge a session token against this instance and   #
+#  log in as you. Treat it as unauthenticated until you replace them.           #
+#                                                                              #
+#  Replace them now:                                                           #
+#                                                                              #
+#    helm upgrade {{ .Release.Name }} ./helm/ninerouter --reuse-values \
+#      --set auth.jwtSecret="$(openssl rand -hex 32)" \
+#      --set auth.initialPassword='choose-one' \
+#      --set auth.apiKeySecret="$(openssl rand -hex 32)" \
+#      --set auth.machineIdSalt="$(openssl rand -hex 16)"
+#                                                                              #
+#  Rotating JWT_SECRET invalidates existing sessions — everyone logs in again.  #
+################################################################################
+{{- end }}
 {{ if .Values.headroom.enabled }}
 Headroom is deployed but NOT yet in use. Setting HEADROOM_URL only tells
 9Router where it is — you still have to enable it in the dashboard:

@@ -17,9 +17,32 @@ also start with a letter.
 
 ## Install
 
-The chart will not invent a signing key, so give it secrets one of two ways.
+`values.yaml` ships **sample** secrets so the chart installs out of the box:
 
-**Existing Secret (recommended):**
+```bash
+helm install ninerouter ./helm/ninerouter
+```
+
+> **The samples are committed to this repository, so they are public.** Anyone
+> who can read the chart can forge a session token against an instance still
+> running them. The chart prints a warning after install until you replace them.
+> Do that before the instance is reachable by anyone but you.
+
+Replace them one of three ways.
+
+**1. `--set` on the command line** — not in git, but it does land in your shell
+history and in `helm get values`:
+
+```bash
+helm upgrade --install ninerouter ./helm/ninerouter \
+  --set auth.jwtSecret="$(openssl rand -hex 32)" \
+  --set auth.initialPassword='choose-one' \
+  --set auth.apiKeySecret="$(openssl rand -hex 32)" \
+  --set auth.machineIdSalt="$(openssl rand -hex 16)"
+```
+
+**2. An existing Secret** — created out of band, so the values never pass
+through Helm at all:
 
 ```bash
 kubectl create secret generic ninerouter-auth \
@@ -32,19 +55,40 @@ helm install ninerouter ./helm/ninerouter \
   --set auth.existingSecret=ninerouter-auth
 ```
 
-**Chart-managed Secret:**
+`auth.existingSecret` overrides the sample values entirely — no Secret is
+rendered and the warning goes away.
+
+**3. helm-secrets** — encrypted at rest in git. See below.
+
+The chart will not generate a key for you: a generated one would rotate on every
+`helm upgrade` and log every user out. It does still fail rendering if you blank
+the values out without setting `auth.existingSecret`.
+
+### Moving to helm-secrets
+
+`secrets.yaml.example` is ready for this.
 
 ```bash
-helm install ninerouter ./helm/ninerouter \
-  --set auth.jwtSecret="$(openssl rand -hex 32)" \
-  --set auth.initialPassword='choose-one' \
-  --set auth.apiKeySecret="$(openssl rand -hex 32)" \
-  --set auth.machineIdSalt="$(openssl rand -hex 16)"
+helm plugin install https://github.com/jkroepke/helm-secrets
+
+cd helm/ninerouter
+cp secrets.yaml.example secrets.yaml
+$EDITOR secrets.yaml                 # fill in real values
+sops --encrypt --in-place secrets.yaml
+
+helm secrets upgrade --install ninerouter . -f secrets.yaml
 ```
 
-Rendering fails with an explanation if neither is supplied. A generated key is
-deliberately not offered: it would rotate on every `helm upgrade` and log every
-user out.
+`secrets.yaml` is gitignored so a decrypted copy cannot be committed by
+accident; commit the SOPS-encrypted form under a different name if you want it
+in git. Values from that file override the samples, which also silences the
+warning.
+
+### Rotating
+
+Changing `JWT_SECRET` invalidates every existing session — users log in again.
+`INITIAL_PASSWORD` only seeds the first login; once you have changed the
+password in the UI, changing this value does nothing.
 
 Then **enable Headroom in the dashboard** — `HEADROOM_URL` only tells 9Router
 where it is. Go to **Endpoint → Token Saver → Headroom**, confirm the URL shown

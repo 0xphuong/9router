@@ -29,7 +29,7 @@ ninerouter:
   containerPort: 20128
 
   persistence:
-    enabled: true
+    enabled: false
 
     # How the volume is provisioned:
     #   dynamic  — StatefulSet volumeClaimTemplate against a StorageClass (default)
@@ -205,53 +205,24 @@ headroom:
   podLabels: {}
 
 # --- Secrets ----------------------------------------------------------------
+# Either point at an existing Secret or set the values here. The chart refuses
+# to render if neither is provided — it will not invent a signing key, because a
+# generated one would rotate on every upgrade and log every user out.
 #
-#   ############################################################################
-#   #  THE VALUES BELOW ARE SAMPLES. THEY ARE PUBLIC — THIS FILE IS IN GIT.    #
-#   #  Anyone who reads this repository can forge a session token against any  #
-#   #  instance still running them. Replace them before this is reachable by   #
-#   #  anyone but you. The chart prints a warning until you do.                #
-#   ############################################################################
+# The existing Secret must contain the keys:
+#   JWT_SECRET, INITIAL_PASSWORD, API_KEY_SECRET, MACHINE_ID_SALT
 #
-# They exist so the chart installs and renders out of the box. Three ways to
-# supply real ones, in increasing order of safety:
-#
-# 1. --set on the command line (not recorded in git, but visible in shell
-#    history and in `helm get values`):
-#
-#      helm install ninerouter ./helm/ninerouter \
-#        --set auth.jwtSecret="$(openssl rand -hex 32)" \
-#        --set auth.initialPassword='choose-one' \
-#        --set auth.apiKeySecret="$(openssl rand -hex 32)" \
-#        --set auth.machineIdSalt="$(openssl rand -hex 16)"
-#
-# 2. An existing Secret you create out of band — set auth.existingSecret and
-#    leave the values below alone. It must hold the keys JWT_SECRET,
-#    INITIAL_PASSWORD, API_KEY_SECRET and MACHINE_ID_SALT:
-#
-#      kubectl create secret generic ninerouter-auth \
-#        --from-literal=JWT_SECRET="$(openssl rand -hex 32)" \
-#        --from-literal=INITIAL_PASSWORD='choose-one' \
-#        --from-literal=API_KEY_SECRET="$(openssl rand -hex 32)" \
-#        --from-literal=MACHINE_ID_SALT="$(openssl rand -hex 16)"
-#
-# 3. helm-secrets, encrypted at rest in git. See secrets.yaml.example and the
-#    README section "Moving to helm-secrets".
-#
-# The chart will not generate a key for you: a generated one would rotate on
-# every `helm upgrade` and log every user out.
+#   kubectl create secret generic ninerouter-auth \
+#     --from-literal=JWT_SECRET="$(openssl rand -hex 32)" \
+#     --from-literal=INITIAL_PASSWORD='choose-one' \
+#     --from-literal=API_KEY_SECRET="$(openssl rand -hex 32)" \
+#     --from-literal=MACHINE_ID_SALT="$(openssl rand -hex 16)"
 auth:
-  # When set, the values below are ignored entirely and no Secret is created.
   existingSecret: ""
-
-  # openssl rand -hex 32
-  jwtSecret: "sample-only-replace-me-1111111111111111111111111111111111111111"
-  # The first-login password. Change it in the UI right after logging in.
-  initialPassword: "changeme"
-  # openssl rand -hex 32
-  apiKeySecret: "sample-only-replace-me-2222222222222222222222222222222222222222"
-  # openssl rand -hex 16
-  machineIdSalt: "sample-only-replace-me-3333"
+  jwtSecret: ""
+  initialPassword: ""
+  apiKeySecret: ""
+  machineIdSalt: ""
 
 # --- Application configuration ----------------------------------------------
 config:

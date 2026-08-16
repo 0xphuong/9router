@@ -13,9 +13,12 @@ ansible/inventory/*.local.yml
 *.retry
 .ansible/
 
-# Helm — values-local.yaml holds JWT_SECRET and INITIAL_PASSWORD
+# Helm — these hold JWT_SECRET and INITIAL_PASSWORD.
+# secrets.yaml is the helm-secrets file: ignored so a decrypted one cannot be
+# committed by accident. Commit the SOPS-encrypted form under another name.
 helm/**/values-local.yaml
 helm/**/values-*.local.yaml
+helm/**/secrets.yaml
 helm/**/charts/
 *.tgz
 

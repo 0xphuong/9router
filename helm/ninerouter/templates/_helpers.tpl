@@ -116,6 +116,25 @@ releases in different namespaces would otherwise collide.
 {{- end }}
 
 {{/*
+Whether the chart's shipped sample secrets are still in place. These values are
+committed to git, so anyone can read them; NOTES.txt warns while any is in use.
+Returns a non-empty string when at least one sample survives.
+*/}}
+{{- define "ninerouter.usingSampleSecrets" -}}
+{{- if not .Values.auth.existingSecret }}
+{{- $samples := list
+  "sample-only-replace-me-1111111111111111111111111111111111111111"
+  "changeme"
+  "sample-only-replace-me-2222222222222222222222222222222222222222"
+  "sample-only-replace-me-3333"
+}}
+{{- range list .Values.auth.jwtSecret .Values.auth.initialPassword .Values.auth.apiKeySecret .Values.auth.machineIdSalt }}
+{{- if has . $samples }}yes{{ end }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
 Guards. Rendering fails early with an explanation rather than producing a
 manifest the cluster would reject or that would silently lose data.
 */}}

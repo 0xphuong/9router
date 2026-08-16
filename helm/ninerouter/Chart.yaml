@@ -7,7 +7,7 @@ description: >-
 type: application
 
 # Chart version. Bump on every chart change.
-version: 0.2.0
+version: 0.3.0
 
 # Default 9Router image tag. Bare SemVer with no leading "v".
 appVersion: "0.5.55"

@@ -1,0 +1,12 @@
+releases:
+
+- name: 9router
+  namespace: systems
+  chart: ninerouter
+  kubeContext: data-prod-dc
+  missingFileHandler: Error
+  values:
+    - "./values.yaml"
+  # secrets:
+  # - "helm_vars/sc-tenant-database-0/secrets.yaml"
+  wait: false
