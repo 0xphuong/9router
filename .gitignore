@@ -13,8 +13,10 @@ ansible/inventory/*.local.yml
 *.retry
 .ansible/
 
-# Helm local state (added as that deployment lands)
-charts/**/charts/
+# Helm — values-local.yaml holds JWT_SECRET and INITIAL_PASSWORD
+helm/**/values-local.yaml
+helm/**/values-*.local.yaml
+helm/**/charts/
 *.tgz
 
 # OS / editor

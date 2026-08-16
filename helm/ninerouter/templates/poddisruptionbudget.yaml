@@ -1,0 +1,22 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "ninerouter.fullname" . }}
+  labels:
+    {{- include "ninerouter.ninerouter.labels" . | nindent 4 }}
+spec:
+  # With a single replica, minAvailable: 1 blocks voluntary evictions outright —
+  # a node drain will hang rather than briefly interrupt 9Router. That is the
+  # intent, but it is a real trade-off: prefer maxUnavailable: 1 if you would
+  # rather drains succeed.
+  {{- if .Values.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  {{- end }}
+  {{- with .Values.podDisruptionBudget.maxUnavailable }}
+  maxUnavailable: {{ . }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "ninerouter.ninerouter.selectorLabels" . | nindent 6 }}
+{{- end }}

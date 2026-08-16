@@ -1,0 +1,46 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- if .Values.headroom.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "ninerouter.headroom.name" . }}
+  labels:
+    {{- include "ninerouter.headroom.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "ninerouter.headroom.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    # Headroom authenticates nobody, so only 9Router may reach it.
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "ninerouter.ninerouter.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.headroom.containerPort }}
+---
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "ninerouter.fullname" . }}
+  labels:
+    {{- include "ninerouter.ninerouter.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "ninerouter.ninerouter.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    {{- with .Values.networkPolicy.ninerouterIngress }}
+    {{- toYaml . | nindent 4 }}
+    {{- else }}
+    # No sources configured, so nothing may reach 9Router. Add your ingress
+    # controller under networkPolicy.ninerouterIngress.
+    []
+    {{- end }}
+{{- end }}

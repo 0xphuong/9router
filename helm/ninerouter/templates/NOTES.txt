@@ -1,0 +1,44 @@
+9Router is installed as release {{ .Release.Name }} in namespace {{ .Release.Namespace }}.
+
+Watch it come up:
+
+  kubectl -n {{ .Release.Namespace }} rollout status statefulset/{{ include "ninerouter.fullname" . }}
+
+Reach it:
+{{- if .Values.ingress.enabled }}
+{{- range .Values.ingress.hosts }}
+{{- $scheme := "http" }}
+{{- range $.Values.ingress.tls }}{{ $scheme = "https" }}{{ end }}
+  {{ $scheme }}://{{ .host }}
+{{- end }}
+{{- else }}
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "ninerouter.fullname" . }} {{ .Values.ninerouter.service.port }}:{{ .Values.ninerouter.service.port }}
+  # then open http://127.0.0.1:{{ .Values.ninerouter.service.port }}
+{{- end }}
+
+Log in with INITIAL_PASSWORD from secret {{ include "ninerouter.secretName" . }}:
+
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "ninerouter.secretName" . }} \
+    -o jsonpath='{.data.INITIAL_PASSWORD}' | base64 -d; echo
+
+Change that password in the UI right after the first login.
+{{ if .Values.headroom.enabled }}
+Headroom is deployed but NOT yet in use. Setting HEADROOM_URL only tells
+9Router where it is — you still have to enable it in the dashboard:
+
+  Endpoint -> Token Saver -> Headroom
+  URL: http://{{ include "ninerouter.headroom.name" . }}:{{ .Values.headroom.service.port }}
+  Recheck status, then enable.
+{{- end }}
+{{- if not .Values.ninerouter.persistence.enabled }}
+
+WARNING: persistence is disabled. 9Router is writing its SQLite database to an
+emptyDir, so every configured provider and API key is lost when the pod is
+replaced. Set ninerouter.persistence.enabled=true for anything but a trial.
+{{- end }}
+{{- if and .Values.ingress.enabled (not .Values.config.authCookieSecure) }}
+
+WARNING: the ingress is enabled but config.authCookieSecure is false. If you
+terminate TLS, set it to true so the auth cookie carries the Secure attribute.
+{{- end }}

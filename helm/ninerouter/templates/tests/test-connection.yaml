@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "ninerouter.fullname" . }}-test-connection"
+  labels:
+    {{- include "ninerouter.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  containers:
+    - name: check
+      image: busybox:1.36
+      command: ["/bin/sh", "-c"]
+      args:
+        # "/" redirects to the login page, so a 3xx is a healthy answer.
+        - |
+          set -e
+          echo "checking 9router..."
+          wget -q -S -O /dev/null --max-redirect=0 \
+            http://{{ include "ninerouter.fullname" . }}:{{ .Values.ninerouter.service.port }}/ 2>&1 | head -5 || true
+          wget -q --spider --max-redirect=5 \
+            http://{{ include "ninerouter.fullname" . }}:{{ .Values.ninerouter.service.port }}/
+          echo "9router OK"
+          {{- if .Values.headroom.enabled }}
+          echo "checking headroom..."
+          wget -q -O - \
+            http://{{ include "ninerouter.headroom.name" . }}:{{ .Values.headroom.service.port }}/readyz
+          echo
+          echo "headroom OK"
+          {{- end }}

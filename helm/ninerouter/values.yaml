@@ -1,0 +1,244 @@
+# Default values for the ninerouter chart.
+
+# The chart is called "ninerouter", not "9router", because Kubernetes validates
+# Service names as RFC 1035 labels — they must start with a letter. A Service
+# named "9router" is rejected by the API server. Override the names here only
+# with something that still starts with a letter.
+nameOverride: ""
+fullnameOverride: ""
+
+# --- 9Router (StatefulSet) --------------------------------------------------
+ninerouter:
+  image:
+    repository: decolua/9router
+    # Defaults to .Chart.AppVersion when empty.
+    tag: ""
+    pullPolicy: IfNotPresent
+
+  # Must stay 1. 9Router stores everything in a SQLite database on its own
+  # ReadWriteOnce volume, so a second replica would get a second, independent
+  # database rather than a shared one. The chart refuses to render above 1.
+  replicaCount: 1
+
+  service:
+    type: ClusterIP
+    port: 20128
+    annotations: {}
+
+  # The container always listens on 20128.
+  containerPort: 20128
+
+  persistence:
+    enabled: true
+    # Empty uses the cluster default StorageClass. "-" disables dynamic
+    # provisioning and binds to a pre-created PV.
+    storageClassName: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 8Gi
+    annotations: {}
+    # Reuse an existing PVC instead of the StatefulSet's volumeClaimTemplate.
+    # Note this bypasses the per-replica claim, so it only makes sense at
+    # replicaCount 1.
+    existingClaim: ""
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
+  # The image entrypoint runs as root to `chown -R node:node /app/data`, then
+  # drops to the node user (uid 1000) with su-exec. Setting runAsNonRoot or
+  # runAsUser here breaks that chown and the app fails to open its database.
+  # fsGroup is what actually makes the mounted volume writable.
+  podSecurityContext:
+    fsGroup: 1000
+    fsGroupChangePolicy: OnRootMismatch
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+      # su-exec needs to change uid to drop privileges.
+      add:
+        - SETUID
+        - SETGID
+        - CHOWN
+        - DAC_OVERRIDE
+    readOnlyRootFilesystem: false
+
+  # A cold start runs database migrations, so the startup probe is generous.
+  # Any status below 400 counts as up; "/" redirects to the login page.
+  startupProbe:
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    failureThreshold: 30
+  readinessProbe:
+    httpGet:
+      path: /
+      port: http
+    periodSeconds: 10
+    timeoutSeconds: 3
+  livenessProbe:
+    httpGet:
+      path: /
+      port: http
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+  podLabels: {}
+  priorityClassName: ""
+  terminationGracePeriodSeconds: 30
+
+# --- Headroom (Deployment) --------------------------------------------------
+headroom:
+  enabled: true
+
+  image:
+    repository: ghcr.io/chopratejas/headroom
+    tag: latest
+    pullPolicy: IfNotPresent
+
+  # Stateless, so this can scale. 9Router reaches it through the Service.
+  replicaCount: 1
+
+  service:
+    type: ClusterIP
+    port: 8787
+    annotations: {}
+
+  containerPort: 8787
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
+  podSecurityContext:
+    runAsNonRoot: false
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+
+  # The image documents both endpoints.
+  readinessProbe:
+    httpGet:
+      path: /readyz
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  livenessProbe:
+    httpGet:
+      path: /livez
+      port: http
+    initialDelaySeconds: 20
+    periodSeconds: 30
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+  podLabels: {}
+
+# --- Secrets ----------------------------------------------------------------
+# Either point at an existing Secret or set the values here. The chart refuses
+# to render if neither is provided — it will not invent a signing key, because a
+# generated one would rotate on every upgrade and log every user out.
+#
+# The existing Secret must contain the keys:
+#   JWT_SECRET, INITIAL_PASSWORD, API_KEY_SECRET, MACHINE_ID_SALT
+#
+#   kubectl create secret generic ninerouter-auth \
+#     --from-literal=JWT_SECRET="$(openssl rand -hex 32)" \
+#     --from-literal=INITIAL_PASSWORD='choose-one' \
+#     --from-literal=API_KEY_SECRET="$(openssl rand -hex 32)" \
+#     --from-literal=MACHINE_ID_SALT="$(openssl rand -hex 16)"
+auth:
+  existingSecret: ""
+  jwtSecret: ""
+  initialPassword: ""
+  apiKeySecret: ""
+  machineIdSalt: ""
+
+# --- Application configuration ----------------------------------------------
+config:
+  nodeEnv: production
+  enableRequestLogs: false
+  observabilityEnabled: true
+  # Set true once traffic reaches 9Router over HTTPS (an ingress with TLS).
+  authCookieSecure: false
+  requireApiKey: false
+
+  # 9Router's own sync job calls back into itself, so this stays the
+  # pod-internal address regardless of the Service port.
+  baseUrl: "http://127.0.0.1:20128"
+  cloudUrl: "https://9router.com"
+  # Browser-facing URL. Next.js normally inlines NEXT_PUBLIC_* at image build
+  # time, so this may have no effect on an already-built image.
+  publicBaseUrl: ""
+  publicCloudUrl: ""
+
+  # Outbound proxy for upstream provider calls, resolved inside the pod.
+  httpProxy: ""
+  httpsProxy: ""
+  allProxy: ""
+  noProxy: ""
+
+  searxngUrl: ""
+
+# Extra environment merged last; overrides anything above. Values must be
+# strings.
+extraEnv: {}
+# Extra environment sourced from existing ConfigMaps/Secrets.
+extraEnvFrom: []
+
+# --- Ingress ----------------------------------------------------------------
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: ninerouter.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# --- NetworkPolicy ----------------------------------------------------------
+# Headroom is an unauthenticated proxy. When enabled, only 9Router pods may
+# reach it. Requires a CNI that enforces NetworkPolicy.
+networkPolicy:
+  enabled: false
+  # Extra ingress rules for the 9Router pod (e.g. your ingress controller).
+  ninerouterIngress: []
+
+serviceAccount:
+  create: true
+  automount: false
+  annotations: {}
+  name: ""
+
+imagePullSecrets: []
+
+# Applied to the 9Router StatefulSet only; it is the singleton.
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+commonLabels: {}
+commonAnnotations: {}

@@ -1,0 +1,143 @@
+{{- include "ninerouter.validate" . -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "ninerouter.fullname" . }}
+  labels:
+    {{- include "ninerouter.ninerouter.labels" . | nindent 4 }}
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  # A StatefulSet because 9Router keeps its state in a local SQLite database:
+  # it needs a stable identity and its own volume, not an interchangeable pod.
+  serviceName: {{ include "ninerouter.headless.name" . }}
+  replicas: {{ .Values.ninerouter.replicaCount }}
+  # The database is a single file on one RWO volume, so replacing the pod has to
+  # release the volume before the new one claims it.
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      {{- include "ninerouter.ninerouter.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ninerouter.ninerouter.selectorLabels" . | nindent 8 }}
+        {{- with .Values.ninerouter.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        # Roll the pod when the chart-managed Secret changes. Skipped for an
+        # existingSecret, whose content the chart does not see.
+        {{- if not .Values.auth.existingSecret }}
+        checksum/auth-secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.ninerouter.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "ninerouter.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automount }}
+      {{- with .Values.ninerouter.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.ninerouter.terminationGracePeriodSeconds }}
+      {{- with .Values.ninerouter.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      containers:
+        - name: ninerouter
+          image: "{{ .Values.ninerouter.image.repository }}:{{ .Values.ninerouter.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.ninerouter.image.pullPolicy }}
+          {{- with .Values.ninerouter.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.ninerouter.containerPort }}
+              protocol: TCP
+          env:
+            {{- include "ninerouter.env" . | trim | nindent 12 }}
+          envFrom:
+            - secretRef:
+                name: {{ include "ninerouter.secretName" . }}
+            {{- with .Values.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.ninerouter.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.ninerouter.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.ninerouter.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.ninerouter.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            # Must stay /app/data — it is what DATA_DIR points at. Anywhere else
+            # and the database lands on the pod's ephemeral filesystem.
+            - name: data
+              mountPath: /app/data
+      {{- with .Values.ninerouter.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.ninerouter.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.ninerouter.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if or (not .Values.ninerouter.persistence.enabled) .Values.ninerouter.persistence.existingClaim }}
+      volumes:
+        - name: data
+          {{- if .Values.ninerouter.persistence.existingClaim }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.ninerouter.persistence.existingClaim }}
+          {{- else }}
+          # No persistence: the database is lost whenever the pod is replaced.
+          emptyDir: {}
+          {{- end }}
+      {{- end }}
+  {{- if and .Values.ninerouter.persistence.enabled (not .Values.ninerouter.persistence.existingClaim) }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "ninerouter.ninerouter.labels" . | nindent 10 }}
+        {{- with .Values.ninerouter.persistence.annotations }}
+        annotations:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      spec:
+        accessModes:
+          {{- toYaml .Values.ninerouter.persistence.accessModes | nindent 10 }}
+        {{- if .Values.ninerouter.persistence.storageClassName }}
+        {{- if eq "-" .Values.ninerouter.persistence.storageClassName }}
+        storageClassName: ""
+        {{- else }}
+        storageClassName: {{ .Values.ninerouter.persistence.storageClassName }}
+        {{- end }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.ninerouter.persistence.size | quote }}
+  {{- end }}

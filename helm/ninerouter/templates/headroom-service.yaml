@@ -1,0 +1,23 @@
+{{- if .Values.headroom.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ninerouter.headroom.name" . }}
+  labels:
+    {{- include "ninerouter.headroom.labels" . | nindent 4 }}
+  {{- with (merge (dict) .Values.headroom.service.annotations .Values.commonAnnotations) }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  # ClusterIP only. Headroom is an unauthenticated proxy and is consumed by
+  # 9Router in-cluster; HEADROOM_URL is built from this Service's name.
+  type: {{ .Values.headroom.service.type }}
+  ports:
+    - port: {{ .Values.headroom.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "ninerouter.headroom.selectorLabels" . | nindent 4 }}
+{{- end }}

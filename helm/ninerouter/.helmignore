@@ -1,0 +1,14 @@
+.DS_Store
+.git/
+.gitignore
+*.swp
+*.bak
+*.tmp
+*.orig
+*~
+.project
+.idea/
+.vscode/
+# Local override files must never be packaged — they hold secrets.
+values-local.yaml
+values-*.local.yaml
