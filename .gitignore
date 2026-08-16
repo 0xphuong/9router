@@ -1,0 +1,16 @@
+# Local environment — holds JWT_SECRET and INITIAL_PASSWORD
+.env
+*.env
+!.env.example
+
+# Bind-mounted runtime data (default DATA_PATH) — SQLite DB, certs, backups
+docker-compose/data/
+
+# Ansible / Helm local state (added as those deployments land)
+*.retry
+charts/**/charts/
+*.tgz
+
+# OS / editor
+.DS_Store
+*.swp

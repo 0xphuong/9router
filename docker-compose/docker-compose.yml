@@ -1,0 +1,68 @@
+name: 9router
+
+services:
+  9router:
+    image: decolua/9router:${NINEROUTER_TAG:-latest}
+    container_name: 9router
+    restart: unless-stopped
+    ports:
+      # Host binding is configurable; default is loopback only.
+      # Set BIND_ADDR=0.0.0.0 in .env to expose it on the network.
+      - "${BIND_ADDR:-127.0.0.1}:${HOST_PORT:-20128}:20128"
+    volumes:
+      # Host directory holding the SQLite DB and runtime state.
+      # Relative paths resolve against this compose file's directory.
+      - ${DATA_PATH:-./data}:/app/data
+    env_file:
+      - .env
+    environment:
+      # Pinned here on purpose: these describe the container's own layout,
+      # not user configuration, and must not drift with .env.
+      # `environment` wins over `env_file` in Compose.
+      DATA_DIR: /app/data
+      PORT: "20128"
+      HOSTNAME: "0.0.0.0"
+      NODE_ENV: production
+      HEADROOM_URL: http://headroom:8787
+    depends_on:
+      headroom:
+        # The headroom image ships its own healthcheck (GET /readyz), so wait
+        # for readiness rather than just for the container to start.
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:20128/').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
+    # Uncomment on Linux if you point HTTP_PROXY/HTTPS_PROXY at a proxy running
+    # on the Docker host. Docker Desktop (macOS/Windows) resolves this already.
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  headroom:
+    image: ghcr.io/chopratejas/headroom:${HEADROOM_TAG:-latest}
+    container_name: headroom
+    restart: unless-stopped
+    ports:
+      # Internal dependency of 9router — 9router reaches it over the compose
+      # network as http://headroom:8787. Published on loopback for debugging only.
+      - "${HEADROOM_BIND_ADDR:-127.0.0.1}:${HEADROOM_HOST_PORT:-8787}:8787"
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
