@@ -22,6 +22,15 @@ helm/**/secrets.yaml
 helm/**/charts/
 *.tgz
 
+# Local deployment config: environment-specific, not chart source. The leading
+# path anchors these to helm/ itself, so helm/ninerouter/values.yaml — the
+# chart's own defaults — stays tracked.
+helm/values.yaml
+helm/values-*.yaml
+helm/helmfile.yaml
+helm/helmfile.d/
+helm/helm_vars/
+
 # OS / editor
 .DS_Store
 *.swp
