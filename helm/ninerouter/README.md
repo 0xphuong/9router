@@ -12,8 +12,41 @@ Helm chart for 9Router and its Headroom token-saver sidecar.
 Kubernetes validates Service names as **RFC 1035 labels**, which must start with
 a letter. A Service named `9router` is rejected by the API server outright. The
 chart, its resources and its labels therefore use `ninerouter` — matching the
-Ansible role name. Anything you pass to `nameOverride` / `fullnameOverride` must
-also start with a letter.
+Ansible role name.
+
+**This applies to the release name too.** Resource names are built as
+`<release>-<chart>`, so installing under a release called `9router` produces
+`9router-ninerouter` and the same rejection:
+
+```
+Service "9router-ninerouter" is invalid: metadata.name: Invalid value:
+a DNS-1035 label must ... start with an alphabetic character
+```
+
+The chart checks this before rendering and fails with the fix rather than
+letting the API server reject it. Either use a release name that starts with a
+letter:
+
+```bash
+helm install ninerouter ./helm/ninerouter
+```
+
+or keep the release name and override the resource names:
+
+```bash
+helm install 9router ./helm/ninerouter --set fullnameOverride=ninerouter
+```
+
+The same applies to anything you pass to `nameOverride` / `fullnameOverride`.
+With helmfile, the release `name:` is what matters:
+
+```yaml
+releases:
+  - name: 9router            # fine, as long as...
+    chart: ./ninerouter
+    values:
+      - fullnameOverride: ninerouter   # ...this is set
+```
 
 ## Install
 

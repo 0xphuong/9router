@@ -139,6 +139,17 @@ Guards. Rendering fails early with an explanation rather than producing a
 manifest the cluster would reject or that would silently lose data.
 */}}
 {{- define "ninerouter.validate" -}}
+{{/*
+Every Service in this chart is named after the fullname, and Service names are
+RFC 1035 labels: they must start with a LETTER. The fullname is built from the
+release name, so `helm install 9router ...` produces "9router-ninerouter" and
+the API server rejects it. Caught here so the failure names the fix instead of
+surfacing as a validation error at apply time.
+*/}}
+{{- $fullname := include "ninerouter.fullname" . }}
+{{- if not (regexMatch "^[a-z]([-a-z0-9]*[a-z0-9])?$" $fullname) }}
+{{- fail (printf "Resource name %q cannot be used: Kubernetes validates Service names as RFC 1035 labels, which must start with a lower-case letter and contain only letters, digits and '-'. This name comes from the release name %q combined with the chart name. Fix it either way: install under a release name that starts with a letter (helm install ninerouter ... / helmfile release name: ninerouter), or keep the release name and set fullnameOverride, e.g. --set fullnameOverride=ninerouter." $fullname .Release.Name) }}
+{{- end }}
 {{- if gt (int .Values.ninerouter.replicaCount) 1 }}
 {{- fail "ninerouter.replicaCount must be 1: 9Router keeps its state in a SQLite database on a ReadWriteOnce volume, so each replica would get its own independent database rather than sharing one." }}
 {{- end }}
