@@ -2,6 +2,7 @@
 .env
 *.env
 !.env.example
+CLAUDE.md
 
 # Bind-mounted runtime data (default DATA_PATH) — SQLite DB, certs, backups
 docker-compose/data/
